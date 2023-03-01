@@ -1,12 +1,18 @@
 import { createCommand } from "commander";
 import fs from "fs-extra";
+import { Listr } from "listr2";
 import { get, isEmpty } from "lodash";
 import path from "path";
 import shell from "shelljs";
+import simpleGit from "simple-git";
 import { prepareAction } from "../helpers/prepare-action.helper";
 import { validateSchema } from "../helpers/validate-schema.helper";
 import { createSchema } from "../validators/create.validatior";
 export const create = createCommand("create");
+
+interface Ctx {
+  /* some variables for internal use */
+}
 
 create
   .option("-n --name <name>", "name of application")
@@ -25,21 +31,65 @@ create
         console.log("Choosing default template :ts");
         templateSelected = "ts";
       }
+
       const nodePlayBase = path.join(__dirname, "..");
       const nodePlayAssets = path.join(nodePlayBase, "assets");
       const selectedAsset = path.join(nodePlayAssets, templateSelected);
 
       const newPlayPath = path.join(currentDir, applicationName);
 
-      if (fs.existsSync(newPlayPath)) {
-        console.log("project path is not empty skipping creation!");
-        console.log(newPlayPath);
-        return;
-      }
+      const tasks = new Listr<Ctx>(
+        [
+          {
+            title: "Creating folder",
+            task(ctx, task) {
+              if (fs.existsSync(newPlayPath)) {
+                throw new Error("project path is not empty skipping creation!");
+              }
 
-      fs.mkdirSync(newPlayPath);
+              fs.mkdirSync(newPlayPath);
+            },
+          },
+          {
+            title: "Copying assets",
+            task(ctx, task) {
+              fs.copySync(selectedAsset, newPlayPath);
 
-      fs.copySync(selectedAsset, newPlayPath);
+              fs.renameSync(
+                path.join(newPlayPath, "git-ignore"),
+                path.join(newPlayPath, ".gitignore")
+              );
+            },
+          },
+          {
+            title: "Initializing Git",
+            task(ctx, task) {
+              const git = simpleGit(newPlayPath);
+
+              git.init();
+              git.add("./*");
+              git.commit("chore(stack): created base project");
+
+              git.checkoutLocalBranch("main");
+              git.deleteLocalBranch("master");
+            },
+          },
+          {
+            title: "Installing dependencies",
+            task(ctx, task) {
+              shell.exec("npm i", {
+                cwd: newPlayPath,
+                silent: true,
+              });
+            },
+          },
+        ],
+        {
+          concurrent: false,
+        }
+      );
+
+      await tasks.run();
 
       console.log("Project created woha!!!");
     })
