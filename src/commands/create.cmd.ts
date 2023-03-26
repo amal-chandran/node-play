@@ -12,12 +12,17 @@ export const create = createCommand("create");
 
 interface Ctx {
   /* some variables for internal use */
+  name: string;
+  template: string;
+  cwd: string;
+  open: boolean;
 }
 
 create
   .option("-n --name <name>", "name of application")
   .option("-t --template <template>", "name of template")
   .option("-c --cwd <path>", "Base nx path")
+  .option("-o --open", "Open in VS Code")
   .action(
     prepareAction(async function (options: any) {
       options = await validateSchema(createSchema, options);
@@ -83,13 +88,26 @@ create
               });
             },
           },
+          {
+            title: "Open In Code",
+            task(ctx, task) {
+              if (ctx.open) {
+                shell.exec("code .", {
+                  cwd: newPlayPath,
+                  silent: true,
+                });
+              } else {
+                task.skip();
+              }
+            },
+          },
         ],
         {
           concurrent: false,
         }
       );
 
-      await tasks.run();
+      await tasks.run(options);
 
       console.log("Project created woha!!!");
     })
